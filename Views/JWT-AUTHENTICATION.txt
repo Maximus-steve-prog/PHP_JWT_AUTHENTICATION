@@ -1,0 +1,248 @@
+CREATE DATABASE jwt_auth;
+
+USE jwt_auth;
+
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL
+);
+Step 2: Install JWT Library
+You will need a JWT library for PHP, such as firebase/php-jwt. If you have Composer installed, you can add it to your project by running:
+
+CopyReplit
+composer require firebase/php-jwt
+Step 3: Create a Configuration File
+Create a file named config.php to hold your database connection information.
+
+CopyReplit
+<?php
+class Database {
+    private $host = "localhost";
+    private $db_name = "jwt_auth";
+    private $username = "root"; // change if needed
+    private $password = ""; // change if needed
+    public $conn;
+
+    public function getConnection() {
+        $this->conn = null;
+        try {
+            $this->conn = new PDO("mysql:host={$this->host};dbname={$this->db_name}", $this->username, $this->password);
+            $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        } catch(PDOException $exception) {
+            echo "Connection error: " . $exception->getMessage();
+        }
+        return $this->conn;
+    }
+}
+?>
+Step 4: Create the User Model
+Create a User.php file to handle user registration and authentication.
+
+CopyReplit
+<?php
+require 'config.php';
+use \Firebase\JWT\JWT;
+
+class User {
+    private $conn;
+    private $secretKey = 'your_secret_key'; // Change this
+
+    public function __construct() {
+        $database = new Database();
+        $this->conn = $database->getConnection();
+    }
+
+    public function register($username, $password) {
+        $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+        $query = "INSERT INTO users (username, password) VALUES (:username, :password)";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':username', $username);
+        $stmt->bindParam(':password', $hashedPassword);
+
+        if ($stmt->execute()) {
+            return true;
+        }
+        return false;
+    }
+
+    public function login($username, $password) {
+        $query = "SELECT * FROM users WHERE username = :username";
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(':username', $username);
+        $stmt->execute();
+
+        if ($stmt->rowCount() > 0) {
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (password_verify($password, $row['password'])) {
+                return $this->createJWT($row['id'], $row['username']);
+            }
+        }
+        return false;
+    }
+
+    private function createJWT($id, $username) {
+        $payload = [
+            'iat' => time(),
+            'exp' => time() + (60 * 60), // Token expires in 1 hour
+            'uid' => $id,
+            'username' => $username,
+        ];
+        return JWT::encode($payload, $this->secretKey);
+    }
+}
+?>
+Step 5: Create API Endpoints
+Create a file named api.php for handling requests.
+
+CopyReplit
+<?php
+require 'User.php';
+header("Content-Type: application/json");
+$method = $_SERVER['REQUEST_METHOD'];
+
+$user = new User();
+
+switch ($method) {
+    case 'POST':
+        $data = json_decode(file_get_contents("php://input"), true);
+        if (isset($data['action'])) {
+            switch ($data['action']) {
+                case 'register':
+                    if ($user->register($data['username'], $data['password'])) {
+                        echo json_encode(["message" => "User registered successfully."]);
+                    } else {
+                        echo json_encode(["message" => "User registration failed."]);
+                    }
+                    break;
+
+                case 'login':
+                    $token = $user->login($data['username'], $data['password']);
+                    if ($token) {
+                        echo json_encode(["token" => $token]);
+                    } else {
+                        echo json_encode(["message" => "Login failed."]);
+                    }
+                    break;
+            }
+        }
+        break;
+
+    default:
+        echo json_encode(["message" => "Invalid request method."]);
+        break;
+}
+?>
+Step 6: Create a Simple HTML/JavaScript Interface
+Create an index.html file for the frontend interaction.
+
+CopyReplit
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JWT Auth Example</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>JWT Authentication Example</h1>
+    <h2>Register</h2>
+    <input type="text" id="registerUsername" placeholder="Username" />
+    <input type="password" id="registerPassword" placeholder="Password" />
+    <button id="registerBtn">Register</button>
+
+    <h2>Login</h2>
+    <input type="text" id="loginUsername" placeholder="Username" />
+    <input type="password" id="loginPassword" placeholder="Password" />
+    <button id="loginBtn">Login</button>
+
+    <script>
+        $('#registerBtn').click(function() {
+            const username = $('#registerUsername').val();
+            const password = $('#registerPassword').val();
+            $.ajax({
+                url: 'api.php',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ action: 'register', username, password }),
+                success: function(response) {
+                    alert(response.message);
+                }
+            });
+        });
+
+        $('#loginBtn').click(function() {
+            const username = $('#loginUsername').val();
+            const password = $('#loginPassword').val();
+            $.ajax({
+                url: 'api.php',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ action: 'login', username, password }),
+                success: function(response) {
+                    if (response.token) {
+                        localStorage.setItem('jwt', response.token);
+                        alert('Login successful! Token: ' + response.token);
+                    } else {
+                        alert(response.message);
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+
+diskpart
+list disk
+select disk X (replace X with your USB disk number)
+clean
+create partition primary
+select partition 1
+format fs=fat32 quick (or ntfs/exfat)
+assign
+exit
+
++----------------+       +-----------------+
+|    Collège     |-------|    Département  |
+|----------------|       |-----------------|
+| - nom: String  |       | - nom: String   |
+| - site: String |       | - responsable: Enseignant |
++----------------+       +-----------------+
+                              |
+                              | 1..*
+                              |
+                       +------+-------+
+                       |     Enseignant |
+                       |----------------|
+                       | - nom: String  |
+                       | - prénom: String|
+                       | - téléphone: String|
+                       | - email: String |
+                       | - datePriseDeFonction: Date |
+                       | - indice: String |
+                       +------------------+
+                              |
+                              | 1..1
+                              |
+                    +------------------+
+                    |       Matière    |
+                    |------------------|
+                    | - nom: String    |
+                    | - salle: String  |
+                    | - nombreDePlaces: int |
+                    +------------------+
+                    |0..* |   | 1..*
+                    |     |   |
+                    +     |   +----------------+
+                    |     |   |    Étudiant    |
++-------------------+     |   |-----------------|
+|       Note       |-----+    | - nom: String   |
+|-------------------|          | - prénom: String|
+| - valeur: float   |          | - téléphone: String|
+| - date: Date      |          | - email: String  |
++-------------------+          | - annéeDentrée: int|
+                               +-----------------+
